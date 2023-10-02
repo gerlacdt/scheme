@@ -1,8 +1,8 @@
 // our tokenize helper function strips out commas
 fn tokenize(expr: &str) -> Vec<String> {
-    expr.replace("[", " [ ")
+    expr.replace(",", "")
+        .replace("[", " [ ")
         .replace("]", " ] ")
-        .replace(",", "")
         .split_whitespace()
         .map(|x| x.to_string())
         .collect()
@@ -24,9 +24,8 @@ fn eval(op: &str, operands: &[u32]) -> u32 {
         }
         "&" => rest.iter().fold(*first, |acc, curr| acc & curr),
         "|" => rest.iter().fold(*first, |acc, curr| acc | curr),
-        _ => panic!("Invalid operator"),
+        all => panic!("invalid operator: {} ---", all),
     };
-
     answer
 }
 
@@ -49,14 +48,17 @@ fn parse_eval(tokens: &[String], mut pos: usize) -> (u32, usize) {
         match &token[..] {
             // an `[` means we recurse
             "[" => {
-                let (answer, len) = parse_eval(&tokens, pos + 1);
-                operands.push(answer);
+                let (tmp_answer, len) = parse_eval(&tokens, pos + 1);
+                operands.push(tmp_answer);
+                answer = tmp_answer;
                 // increment our position by the length of the sub-expression so we don't double count
                 pos += len - pos;
             }
             // an `]` means there are no more operands; we can evalute now
             "]" => {
                 answer = eval(op, &operands);
+                println!("eval({}, {:?}) => {}", op, &operands, answer);
+                pos += 1;
                 break;
             }
             "|" | "&" | "!" => {
@@ -71,6 +73,7 @@ fn parse_eval(tokens: &[String], mut pos: usize) -> (u32, usize) {
         }
     }
 
+    println!("answer: {}, operands: {:?}", answer, &operands);
     (answer, pos)
 }
 
@@ -79,14 +82,37 @@ mod tests {
 
     use super::*;
 
-    fn eval_test() {
-        let expression = "[|, [&, 1, 0], [!, 1]]";
+    #[test]
+    fn eval_simple_test() {
+        let expression = "[|, 1, 0]";
 
         // It's easier to work with a vector of strings in Rust
         let tokens = tokenize(expression);
 
-        let answer = parse_eval(&tokens, 0).0;
+        let actual = parse_eval(&tokens, 0).0;
+        let expected = 1;
+        assert_eq!(expected, actual);
+    }
 
-        println!("answer: {}", answer);
+    #[test]
+    fn eval_recursive_test() {
+        let expression = "[|, [&, 1, 0], [!, 1]]";
+        // It's easier to work with a vector of strings in Rust
+        let tokens = tokenize(expression);
+
+        let actual = parse_eval(&tokens, 0).0;
+        let expected = 0;
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn eval_deep_recursive_test() {
+        let expression = "[|, [&, 1, [|, 1, 0]], [!, 1]]";
+        // It's easier to work with a vector of strings in Rust
+        let tokens = tokenize(expression);
+
+        let actual = parse_eval(&tokens, 0).0;
+        let expected = 1;
+        assert_eq!(expected, actual);
     }
 }
