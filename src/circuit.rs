@@ -57,7 +57,7 @@ fn parse_eval(tokens: &[String], mut pos: usize) -> (u32, usize) {
             // an `]` means there are no more operands; we can evalute now
             "]" => {
                 answer = eval(op, &operands);
-                println!("eval({}, {:?}) => {}", op, &operands, answer);
+                // println!("eval({}, {:?}) => {}", op, &operands, answer);
                 pos += 1;
                 break;
             }
@@ -73,7 +73,7 @@ fn parse_eval(tokens: &[String], mut pos: usize) -> (u32, usize) {
         }
     }
 
-    println!("answer: {}, operands: {:?}", answer, &operands);
+    // println!("answer: {}, operands: {:?}", answer, &operands);
     (answer, pos)
 }
 
