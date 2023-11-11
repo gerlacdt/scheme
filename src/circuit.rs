@@ -1,3 +1,4 @@
+#![allow(dead_code, unused)]
 // our tokenize helper function strips out commas
 fn tokenize(expr: &str) -> Vec<String> {
     expr.replace(",", "")
