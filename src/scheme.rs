@@ -122,6 +122,14 @@ fn init_env() -> Env {
     );
 
     operations.insert(
+        "*".to_string(),
+        Expression::Func(|args: &[Expression]| -> Result<Expression, SErr> {
+            let product = parse_list_of_floats(args)?.iter().product();
+            Ok(Expression::Number(product))
+        }),
+    );
+
+    operations.insert(
         "-".to_string(),
         Expression::Func(|args: &[Expression]| -> Result<Expression, SErr> {
             let floats = parse_list_of_floats(args)?;
