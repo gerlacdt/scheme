@@ -1,2 +1,2 @@
 mod circuit;
-mod scheme;
+pub mod scheme;

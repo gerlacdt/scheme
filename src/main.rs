@@ -1,3 +1,5 @@
+use scheme::scheme::repl;
 fn main() {
-    println!("Hello, world!");
+    println!("welcome to the simple Scheme REPL...");
+    repl();
 }

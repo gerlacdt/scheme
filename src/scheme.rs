@@ -1,5 +1,10 @@
 #![allow(dead_code, unused)]
-use std::{collections::HashMap, fmt};
+use std::io::prelude::*;
+use std::{
+    collections::HashMap,
+    fmt,
+    io::{stdin, stdout},
+};
 
 fn hello() {
     println!("scheme dummy function");
@@ -166,6 +171,32 @@ fn parse_eval(input: String, env: &mut Env) -> SResult<Expression> {
     Ok(evaluated)
 }
 
+static PROMPT: &str = "scheme> ";
+
+pub fn repl() {
+    let env = &mut init_env();
+
+    loop {
+        print!("{}", PROMPT);
+        stdout().flush().expect("failed to flush to stdout");
+
+        let mut expr = String::new();
+        stdin()
+            .read_line(&mut expr)
+            .expect("failed to read from stdin");
+
+        if expr.trim() == "quit" {
+            break;
+        }
+
+        match parse_eval(expr, env) {
+            Ok(result) => println!("> {}", result),
+            Err(e) => match e {
+                SErr::Reason(msg) => println!("> Error: {}", msg),
+            },
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
 

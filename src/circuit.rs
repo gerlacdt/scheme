@@ -1,4 +1,6 @@
 #![allow(dead_code, unused)]
+
+use std::io::stdout;
 // our tokenize helper function strips out commas
 fn tokenize(expr: &str) -> Vec<String> {
     expr.replace(",", "")
