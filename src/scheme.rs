@@ -1,3 +1,4 @@
+#![allow(dead_code, unused)]
 use std::{collections::HashMap, fmt};
 
 fn hello() {
@@ -26,6 +27,21 @@ enum Expression {
     Number(f64),
     List(Vec<Expression>),
     Func(fn(&[Expression]) -> SResult<Expression>),
+}
+
+impl fmt::Display for Expression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let str = match self {
+            Expression::Symbol(s) => s.clone(),
+            Expression::Number(n) => n.to_string(),
+            Expression::List(l) => {
+                let chars: Vec<String> = l.iter().map(|c| c.to_string()).collect();
+                format!("({})", chars.join(","))
+            }
+            Expression::Func(_) => "Function {}".to_string(),
+        };
+        write!(f, "{}", str)
+    }
 }
 
 struct Env {
@@ -76,5 +92,97 @@ fn parse_atom(token: &str) -> Expression {
     match token.parse() {
         Ok(n) => Expression::Number(n),
         Err(_) => Expression::Symbol(token.to_string().clone()),
+    }
+}
+
+fn parse_list_of_floats(args: &[Expression]) -> SResult<Vec<f64>> {
+    args.iter().map(|x| parse_float(x)).collect()
+}
+
+fn parse_float(exp: &Expression) -> SResult<f64> {
+    match exp {
+        Expression::Number(n) => Ok(*n),
+        _ => Err(SErr::Reason("Expected a number".to_string())),
+    }
+}
+
+fn init_env() -> Env {
+    let mut operations: HashMap<String, Expression> = HashMap::new();
+    operations.insert(
+        "+".to_string(),
+        Expression::Func(|args: &[Expression]| -> Result<Expression, SErr> {
+            let sum = parse_list_of_floats(args)?.iter().sum();
+            Ok(Expression::Number(sum))
+        }),
+    );
+
+    operations.insert(
+        "-".to_string(),
+        Expression::Func(|args: &[Expression]| -> Result<Expression, SErr> {
+            let floats = parse_list_of_floats(args)?;
+            let (first, rest) = floats
+                .split_first()
+                .ok_or(SErr::Reason("expected at least one number".to_string()))?;
+            let sum_of_rest: f64 = rest.iter().sum();
+            Ok(Expression::Number(first - sum_of_rest))
+        }),
+    );
+
+    Env { operations }
+}
+
+fn eval(exp: &Expression, env: &mut Env) -> SResult<Expression> {
+    match exp {
+        Expression::Symbol(s) => env
+            .operations
+            .get(s)
+            .ok_or(SErr::Reason(format!("unexpected symbol: {}", s)))
+            .map(|x| x.clone()),
+        Expression::Number(_) => Ok(exp.clone()),
+        Expression::List(l) => {
+            let (first, args) = l
+                .split_first()
+                .ok_or(SErr::Reason("expected a non-empty list".to_string()))?;
+            let first_eval = eval(first, env)?;
+
+            match first_eval {
+                Expression::Func(f) => {
+                    let args_eval = args
+                        .iter()
+                        .map(|x| eval(x, env))
+                        .collect::<SResult<Vec<Expression>>>();
+                    f(&args_eval?)
+                }
+                _ => Err(SErr::Reason("first form must be a function".to_string())),
+            }
+        }
+        Expression::Func(_) => Err(SErr::Reason("unexpected form".to_string())),
+    }
+}
+
+fn parse_eval(input: String, env: &mut Env) -> SResult<Expression> {
+    let (parsed, _) = parse(&tokenize(input))?;
+    let evaluated = eval(&parsed, env)?;
+    Ok(evaluated)
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn simple_expression_test() {
+        let env = &mut init_env();
+
+        let expr = "(+ 2 6)".to_string();
+
+        let actual = match parse_eval(expr, env).unwrap() {
+            Expression::Number(n) => n,
+            _ => 0.0,
+        };
+
+        let expected = 8.0;
+        assert_eq!(expected, actual);
     }
 }
