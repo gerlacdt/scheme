@@ -6,6 +6,8 @@ use std::{
     io::{stdin, stdout},
 };
 
+use std::iter::Iterator;
+
 fn hello() {
     println!("scheme dummy function");
 }
