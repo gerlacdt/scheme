@@ -158,6 +158,9 @@ fn eval(exp: &Expression, env: &mut Env) -> SResult<Expression> {
             let (first, args) = l
                 .split_first()
                 .ok_or(SErr::Reason("expected a non-empty list".to_string()))?;
+
+            // TODO insert define, set! logic
+
             let first_eval = eval(first, env)?;
 
             match first_eval {
@@ -172,6 +175,85 @@ fn eval(exp: &Expression, env: &mut Env) -> SResult<Expression> {
             }
         }
         Expression::Func(_) => Err(SErr::Reason("unexpected form".to_string())),
+    }
+}
+
+fn eval_define(args: &[Expression], env: &mut Env) -> SResult<Expression> {
+    if args.len() > 2 {
+        return Err(SErr::Reason(
+            "define keyword only accepts 2 forms".to_string(),
+        ));
+    }
+    let (name, rest) = args
+        .split_first()
+        .ok_or(SErr::Reason("expected first form".to_string()))?;
+    let name_str = match name {
+        Expression::Symbol(s) => Ok(s.clone()),
+        _ => Err(SErr::Reason(
+            "expected first form to be a symbol".to_string(),
+        )),
+    }?;
+
+    if env.operations.contains_key(&name_str) {
+        return Err(SErr::Reason(
+            "cannot overwrite a reserved operation".to_string(),
+        ));
+    }
+
+    let value = rest
+        .get(0)
+        .ok_or(SErr::Reason("expected a value form".to_string()))?;
+    let value_eval = eval(value, env)?;
+    env.operations.insert(name_str, value_eval);
+    Ok(name.clone())
+}
+
+fn eval_set(args: &[Expression], env: &mut Env) -> SResult<Expression> {
+    if args.len() > 2 {
+        return Err(SErr::Reason(
+            "define keyword only accepts 2 forms".to_string(),
+        ));
+    }
+
+    let (name, rest) = args
+        .split_first()
+        .ok_or(SErr::Reason("expected first form".to_string()))?;
+    let name_str = match name {
+        Expression::Symbol(s) => Ok(s.clone()),
+        _ => Err(SErr::Reason("expected name to be a symbol".to_string())),
+    }?;
+
+    let value = rest
+        .get(0)
+        .ok_or(SErr::Reason("expected a value form".to_string()))?;
+    let value_eval = eval(value, env)?;
+
+    match env.operations.get(&name_str) {
+        Some(_) => {
+            env.operations.insert(name_str, value_eval);
+        }
+        None => {
+            return Err(SErr::Reason(format!(
+                "global variable {} is not defined",
+                name_str
+            )));
+        }
+    }
+    Ok(name.clone())
+}
+
+fn eval_keyword(
+    expr: &Expression,
+    args: &[Expression],
+    env: &mut Env,
+) -> Option<SResult<Expression>> {
+    match expr {
+        Expression::Symbol(s) => match s.as_ref() {
+            "define" => Some(eval_define(args, env)),
+            "set!" => Some(eval_set(args, env)),
+            _ => None,
+        },
+        _ => None,
     }
 }
 
