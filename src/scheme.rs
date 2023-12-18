@@ -160,18 +160,21 @@ fn eval(exp: &Expression, env: &mut Env) -> SResult<Expression> {
                 .ok_or(SErr::Reason("expected a non-empty list".to_string()))?;
 
             // TODO insert define, set! logic
-
-            let first_eval = eval(first, env)?;
-
-            match first_eval {
-                Expression::Func(f) => {
-                    let args_eval = args
-                        .iter()
-                        .map(|x| eval(x, env))
-                        .collect::<SResult<Vec<Expression>>>();
-                    f(&args_eval?)
+            match eval_keyword(first, args, env) {
+                Some(result) => result,
+                None => {
+                    let first_eval = eval(first, env)?;
+                    match first_eval {
+                        Expression::Func(f) => {
+                            let args_eval = args
+                                .iter()
+                                .map(|x| eval(x, env))
+                                .collect::<SResult<Vec<Expression>>>();
+                            f(&args_eval?)
+                        }
+                        _ => Err(SErr::Reason("first form must be a function".to_string())),
+                    }
                 }
-                _ => Err(SErr::Reason("first form must be a function".to_string())),
             }
         }
         Expression::Func(_) => Err(SErr::Reason("unexpected form".to_string())),
@@ -263,6 +266,14 @@ fn parse_eval(input: String, env: &mut Env) -> SResult<Expression> {
     Ok(evaluated)
 }
 
+fn parse_eval_lines(input: Vec<String>, env: &mut Env) -> SResult<Expression> {
+    let mut result = Ok(Expression::Number(0.0));
+    for line in input {
+        result = parse_eval(line, env);
+    }
+    result
+}
+
 static PROMPT: &str = "scheme> ";
 
 pub fn repl() {
@@ -306,6 +317,39 @@ mod tests {
         };
 
         let expected = 8.0;
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn define_set_test() {
+        let env = &mut init_env();
+
+        let expr1 = "(define my-num 42)".to_string();
+        parse_eval(expr1, env);
+        let expr2 = "(+ 3 my-num)".to_string();
+
+        let actual = match parse_eval(expr2, env).unwrap() {
+            Expression::Number(n) => n,
+            _ => 0.0,
+        };
+
+        let expected = 45.0;
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn define_set_parse_lines_test() {
+        let env = &mut init_env();
+        let expr1 = "(define my-num 42)".to_string();
+        let expr2 = "(+ 3 my-num)".to_string();
+        let exps = vec![expr1, expr2];
+
+        let actual = match parse_eval_lines(exps, env).unwrap() {
+            Expression::Number(n) => n,
+            _ => 0.0,
+        };
+
+        let expected = 45.0;
         assert_eq!(expected, actual);
     }
 }
