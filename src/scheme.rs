@@ -30,6 +30,7 @@ type SResult<T> = Result<T, SErr>;
 
 #[derive(Clone)]
 enum Expression {
+    Bool(bool),
     Symbol(String),
     Number(f64),
     List(Vec<Expression>),
@@ -39,6 +40,13 @@ enum Expression {
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let str = match self {
+            Expression::Bool(b) => {
+                if *b {
+                    "#t".to_string()
+                } else {
+                    "#f".to_string()
+                }
+            }
             Expression::Symbol(s) => s.clone(),
             Expression::Number(n) => n.to_string(),
             Expression::List(l) => {
@@ -96,9 +104,13 @@ fn read_sequence<'a>(tokens: &'a [String]) -> SResult<(Expression, &'a [String])
 }
 
 fn parse_atom(token: &str) -> Expression {
-    match token.parse() {
-        Ok(n) => Expression::Number(n),
-        Err(_) => Expression::Symbol(token.to_string().clone()),
+    match token.as_ref() {
+        "#t" => Expression::Bool(true),
+        "#f" => Expression::Bool(false),
+        _ => match token.parse() {
+            Ok(n) => Expression::Number(n),
+            Err(_) => Expression::Symbol(token.to_string().clone()),
+        },
     }
 }
 
@@ -113,6 +125,24 @@ fn parse_float(exp: &Expression) -> SResult<f64> {
     }
 }
 
+macro_rules! comparison {
+    ($check_fn:expr) => {{
+        |args: &[Expression]| -> SResult<Expression> {
+            let floats = parse_list_of_floats(args)?;
+            let (first, rest) = floats
+                .split_first()
+                .ok_or(SErr::Reason("expected at least one number".to_string()))?;
+
+            fn f(prev: &f64, ts: &[f64]) -> bool {
+                match ts.first() {
+                    Some(t) => $check_fn(prev, t) && f(t, &ts[1..]),
+                    None => true,
+                }
+            };
+            Ok(Expression::Bool(f(first, rest)))
+        }
+    }};
+}
 fn init_env() -> Env {
     let mut operations: HashMap<String, Expression> = HashMap::new();
     operations.insert(
@@ -143,11 +173,28 @@ fn init_env() -> Env {
         }),
     );
 
+    operations.insert(
+        "=".to_string(),
+        Expression::Func(comparison!(|a, b| a == b)),
+    );
+
+    operations.insert(">".to_string(), Expression::Func(comparison!(|a, b| a > b)));
+    operations.insert("<".to_string(), Expression::Func(comparison!(|a, b| a < b)));
+    operations.insert(
+        ">=".to_string(),
+        Expression::Func(comparison!(|a, b| a >= b)),
+    );
+    operations.insert(
+        "<=".to_string(),
+        Expression::Func(comparison!(|a, b| a <= b)),
+    );
+
     Env { operations }
 }
 
 fn eval(exp: &Expression, env: &mut Env) -> SResult<Expression> {
     match exp {
+        Expression::Bool(_) => Ok(exp.clone()),
         Expression::Symbol(s) => env
             .operations
             .get(s)
@@ -351,5 +398,98 @@ mod tests {
 
         let expected = 45.0;
         assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn compare_equals_test() {
+        let env = &mut init_env();
+        let expr = "(= 1 1 1)".to_string();
+
+        let actual = match parse_eval(expr, env).unwrap() {
+            Expression::Bool(b) => b,
+            _ => false,
+        };
+
+        assert!(actual);
+    }
+
+    #[test]
+    fn compare_unequals_test() {
+        let env = &mut init_env();
+        let expr = "(= 1 1 2)".to_string();
+
+        let actual = match parse_eval(expr, env).unwrap() {
+            Expression::Bool(b) => b,
+            _ => panic!("expression could not be evaluated"),
+        };
+
+        assert!(!actual);
+    }
+
+    #[test]
+    fn compare_greater_test() {
+        let env = &mut init_env();
+        let expr = "(> 5 3 1)".to_string();
+
+        let actual = match parse_eval(expr, env).unwrap() {
+            Expression::Bool(b) => b,
+            _ => panic!("expression could not be evaluated"),
+        };
+
+        assert!(actual);
+    }
+
+    #[test]
+    fn compare_greater_than_test() {
+        let env = &mut init_env();
+        let expr = "(>= 5 5 3 1)".to_string();
+
+        let actual = match parse_eval(expr, env).unwrap() {
+            Expression::Bool(b) => b,
+            _ => panic!("expression could not be evaluated"),
+        };
+
+        assert!(actual);
+    }
+
+    #[test]
+    fn compare_smaller_test() {
+        let env = &mut init_env();
+        let expr = "(< 1 3 5)".to_string();
+
+        let actual = match parse_eval(expr, env).unwrap() {
+            Expression::Bool(b) => b,
+            _ => panic!("expression could not be evaluated"),
+        };
+
+        assert!(actual);
+    }
+
+    #[test]
+    fn compare_smaller_than_test() {
+        let env = &mut init_env();
+        let expr = "(<= 1 1 3 5)".to_string();
+
+        let actual = match parse_eval(expr, env).unwrap() {
+            Expression::Bool(b) => b,
+            _ => panic!("expression could not be evaluated"),
+        };
+
+        assert!(actual);
+    }
+
+    #[test]
+    fn compare_with_variables_test() {
+        let env = &mut init_env();
+        let expr1 = "(define my-num 42)".to_string();
+        let expr2 = "(>= my-num 5 5 (+ 3 1))".to_string();
+        let exps = vec![expr1, expr2];
+
+        let actual = match parse_eval_lines(exps, env).unwrap() {
+            Expression::Bool(b) => b,
+            _ => panic!("ERROR expression could not be evaluated"),
+        };
+
+        assert!(actual);
     }
 }
