@@ -89,7 +89,6 @@ fn init_lambda_env<'a>(
     args: &[Expression],
     outer: &'a mut Env,
 ) -> SResult<Env<'a>> {
-    println!("in init_lambda_env()");
     let symbols = parse_list_of_symbols(params)?;
 
     if symbols.len() != args.len() {
@@ -112,7 +111,6 @@ fn init_lambda_env<'a>(
         scope: Some(outer),
     };
 
-    println!("in lambda_env_init(), lambda env: {}", new_env);
     Ok(new_env)
 }
 
@@ -299,7 +297,6 @@ fn eval(exp: &Expression, env: &mut Env) -> SResult<Expression> {
                         }
                         Expression::Lambda(l) => {
                             let new_env = &mut init_lambda_env(l.params, args, env)?;
-                            println!("lambda env: {}", new_env);
                             eval(&l.body, new_env)
                         }
                         _ => Err(SErr::Reason("first form must be a function".to_string())),
@@ -313,7 +310,6 @@ fn eval(exp: &Expression, env: &mut Env) -> SResult<Expression> {
 }
 
 fn eval_define(args: &[Expression], env: &mut Env) -> SResult<Expression> {
-    println!("in eval_define()");
     if args.len() > 2 {
         return Err(SErr::Reason(
             "define keyword only accepts 2 forms".to_string(),
