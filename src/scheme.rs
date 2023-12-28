@@ -1,5 +1,6 @@
 #![allow(dead_code, unused)]
 use std::io::prelude::*;
+use std::rc::Rc;
 use std::{
     collections::HashMap,
     fmt,
@@ -29,12 +30,19 @@ impl fmt::Display for SErr {
 type SResult<T> = Result<T, SErr>;
 
 #[derive(Clone)]
+struct SLambda {
+    params: Rc<Expression>,
+    body: Rc<Expression>,
+}
+
+#[derive(Clone)]
 enum Expression {
     Bool(bool),
     Symbol(String),
     Number(f64),
     List(Vec<Expression>),
     Func(fn(&[Expression]) -> SResult<Expression>),
+    Lambda(SLambda),
 }
 
 impl fmt::Display for Expression {
@@ -54,15 +62,69 @@ impl fmt::Display for Expression {
                 format!("({})", chars.join(","))
             }
             Expression::Func(_) => "Function {}".to_string(),
+            Expression::Lambda(_) => "Lambda: {}".to_string(),
         };
         write!(f, "{}", str)
     }
 }
 
-struct Env {
+struct Env<'a> {
     operations: HashMap<String, Expression>,
+    scope: Option<&'a Env<'a>>,
 }
 
+impl<'a> fmt::Display for Env<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut output: Vec<String> = vec![];
+        for (key, value) in &self.operations {
+            output.push(format!("{}  {}", key, value));
+        }
+        let str = format!("{}", output.join(","));
+        write!(f, "{}", str)
+    }
+}
+
+fn init_lambda_env<'a>(
+    params: Rc<Expression>,
+    args: &[Expression],
+    outer: &'a mut Env,
+) -> SResult<Env<'a>> {
+    println!("in init_lambda_env()");
+    let symbols = parse_list_of_symbols(params)?;
+
+    if symbols.len() != args.len() {
+        return Err(SErr::Reason(format!(
+            "expected {} args, got {}",
+            symbols.len(),
+            args.len()
+        )));
+    }
+
+    let evaluated_forms = eval_forms(args, outer)?;
+    let mut operations: HashMap<String, Expression> = HashMap::new();
+
+    for (k, v) in symbols.iter().zip(evaluated_forms.iter()) {
+        operations.insert(k.clone(), v.clone());
+    }
+
+    let new_env = Env {
+        operations,
+        scope: Some(outer),
+    };
+
+    println!("in lambda_env_init(), lambda env: {}", new_env);
+    Ok(new_env)
+}
+
+fn env_get(s: &str, env: &Env) -> Option<Expression> {
+    match env.operations.get(s) {
+        Some(expr) => Some(expr.clone()),
+        None => match &env.scope {
+            Some(outer) => env_get(s, &outer),
+            None => None,
+        },
+    }
+}
 fn tokenize(expression: String) -> Vec<String> {
     expression
         .replace("(", " ( ")
@@ -125,6 +187,21 @@ fn parse_float(exp: &Expression) -> SResult<f64> {
     }
 }
 
+fn parse_list_of_symbols(args: Rc<Expression>) -> SResult<Vec<String>> {
+    let list = match args.as_ref() {
+        Expression::List(l) => Ok(l.clone()),
+        _ => Err(SErr::Reason("expected args form to be a list".to_string())),
+    }?;
+    list.iter()
+        .map(|x| match x {
+            Expression::Symbol(s) => Ok(s.clone()),
+            _ => Err(SErr::Reason(
+                "expected symbols in the argument list".to_string(),
+            )),
+        })
+        .collect()
+}
+
 macro_rules! comparison {
     ($check_fn:expr) => {{
         |args: &[Expression]| -> SResult<Expression> {
@@ -143,7 +220,7 @@ macro_rules! comparison {
         }
     }};
 }
-fn init_env() -> Env {
+fn init_env<'a>() -> Env<'a> {
     let mut operations: HashMap<String, Expression> = HashMap::new();
     operations.insert(
         "+".to_string(),
@@ -189,15 +266,16 @@ fn init_env() -> Env {
         Expression::Func(comparison!(|a, b| a <= b)),
     );
 
-    Env { operations }
+    Env {
+        operations,
+        scope: None,
+    }
 }
 
 fn eval(exp: &Expression, env: &mut Env) -> SResult<Expression> {
     match exp {
         Expression::Bool(_) => Ok(exp.clone()),
-        Expression::Symbol(s) => env
-            .operations
-            .get(s)
+        Expression::Symbol(s) => env_get(s, env)
             .ok_or(SErr::Reason(format!("unexpected symbol: {}", s)))
             .map(|x| x.clone()),
         Expression::Number(_) => Ok(exp.clone()),
@@ -219,16 +297,23 @@ fn eval(exp: &Expression, env: &mut Env) -> SResult<Expression> {
                                 .collect::<SResult<Vec<Expression>>>();
                             f(&args_eval?)
                         }
+                        Expression::Lambda(l) => {
+                            let new_env = &mut init_lambda_env(l.params, args, env)?;
+                            println!("lambda env: {}", new_env);
+                            eval(&l.body, new_env)
+                        }
                         _ => Err(SErr::Reason("first form must be a function".to_string())),
                     }
                 }
             }
         }
         Expression::Func(_) => Err(SErr::Reason("unexpected form".to_string())),
+        Expression::Lambda(_) => Err(SErr::Reason("unexpected form".to_string())),
     }
 }
 
 fn eval_define(args: &[Expression], env: &mut Env) -> SResult<Expression> {
+    println!("in eval_define()");
     if args.len() > 2 {
         return Err(SErr::Reason(
             "define keyword only accepts 2 forms".to_string(),
@@ -299,12 +384,60 @@ fn eval_keyword(
 ) -> Option<SResult<Expression>> {
     match expr {
         Expression::Symbol(s) => match s.as_ref() {
+            "if" => Some(eval_if(args, env)),
             "define" => Some(eval_define(args, env)),
             "set!" => Some(eval_set(args, env)),
+            "lambda" => Some(eval_lambda(args)),
             _ => None,
         },
         _ => None,
     }
+}
+
+fn eval_if(args: &[Expression], env: &mut Env) -> SResult<Expression> {
+    let criteria = args
+        .first()
+        .ok_or(SErr::Reason("expected criteria".to_string()))?;
+    let criteria_eval = eval(criteria, env)?;
+
+    match criteria_eval {
+        Expression::Bool(b) => {
+            let branch = if b { 1 } else { 2 };
+            let result = args.get(branch).ok_or(SErr::Reason(format!(
+                "expected branching conditional: {}",
+                branch
+            )))?;
+            eval(result, env)
+        }
+        _ => Err(SErr::Reason(format!(
+            "unexpected criteria: {}",
+            criteria.to_string()
+        ))),
+    }
+}
+
+fn eval_lambda(args: &[Expression]) -> SResult<Expression> {
+    if args.len() > 2 {
+        return Err(SErr::Reason(
+            "lambda requires exactly two forms".to_string(),
+        ));
+    }
+
+    let params = args
+        .first()
+        .ok_or(SErr::Reason("expected lambda param".to_string()))?;
+    let body = args
+        .get(1)
+        .ok_or(SErr::Reason("expected lambda body".to_string()))?;
+
+    Ok(Expression::Lambda(SLambda {
+        params: Rc::new(params.clone()),
+        body: Rc::new(body.clone()),
+    }))
+}
+
+fn eval_forms(args: &[Expression], env: &mut Env) -> SResult<Vec<Expression>> {
+    args.iter().map(|x| eval(x, env)).collect()
 }
 
 fn parse_eval(input: String, env: &mut Env) -> SResult<Expression> {
@@ -491,5 +624,38 @@ mod tests {
         };
 
         assert!(actual);
+    }
+
+    #[test]
+    fn lambda_simple_test() {
+        let env = &mut init_env();
+        let expr1 = "(define add3 (lambda () (+ 1 2)))".to_string();
+        let expr2 = "(add3)".to_string();
+        let exps = vec![expr1, expr2];
+
+        let actual = match parse_eval_lines(exps, env).unwrap() {
+            Expression::Number(n) => n,
+            _ => panic!("ERROR expression could not be evaluated"),
+        };
+
+        let expected = 3.0;
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn lambda_fib_test() {
+        let env = &mut init_env();
+        let expr1 =
+            "(define fib (lambda (n) (if (< n 2) 1 (+ (fib (- n 1)) (fib (- n 2))))))".to_string();
+        let expr2 = "(fib 10)".to_string();
+        let exps = vec![expr1, expr2];
+
+        let actual = match parse_eval_lines(exps, env).unwrap() {
+            Expression::Number(n) => n,
+            _ => panic!("ERROR expression could not be evaluated"),
+        };
+
+        let expected = 89.0;
+        assert_eq!(expected, actual);
     }
 }
