@@ -1,4 +1,5 @@
 #![allow(dead_code, unused)]
+use std::fs;
 use std::io::prelude::*;
 use std::rc::Rc;
 use std::{
@@ -484,6 +485,20 @@ pub fn repl() {
         }
     }
 }
+
+pub fn compile(path: &str) {
+    let mut env = &mut init_env();
+    let input = fs::read_to_string(path).expect("Can't read file");
+    let tokens = tokenize(&mut input.chars().peekable());
+
+    match parse_eval(tokens, env) {
+        Ok(result) => println!("scheme> {}", result),
+        Err(e) => match e {
+            SErr::Reason(msg) => println!("scheme> ERROR: {}", msg),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -678,5 +693,13 @@ mod tests {
 
         let expected = 89.0;
         assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn compile_file_test() {
+        let path = "./test_files/test.scm";
+        compile(path);
+
+        // assert!(false);  // uncomment if you want to see result in STDOUT
     }
 }
