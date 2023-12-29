@@ -9,6 +9,8 @@ use std::{
 
 use std::iter::Iterator;
 
+use crate::tokenizer::tokenize;
+
 fn hello() {
     println!("scheme dummy function");
 }
@@ -123,14 +125,14 @@ fn env_get(s: &str, env: &Env) -> Option<Expression> {
         },
     }
 }
-fn tokenize(expression: String) -> Vec<String> {
-    expression
-        .replace("(", " ( ")
-        .replace(")", " ) ")
-        .split_whitespace()
-        .map(|x| x.to_string())
-        .collect()
-}
+// fn tokenize(expression: String) -> Vec<String> {
+//     expression
+//         .replace("(", " ( ")
+//         .replace(")", " ) ")
+//         .split_whitespace()
+//         .map(|x| x.to_string())
+//         .collect()
+// }
 
 fn parse<'a>(tokens: &'a [String]) -> SResult<(Expression, &'a [String])> {
     let (token, rest) = tokens
@@ -436,19 +438,23 @@ fn eval_forms(args: &[Expression], env: &mut Env) -> SResult<Vec<Expression>> {
     args.iter().map(|x| eval(x, env)).collect()
 }
 
-fn parse_eval(input: String, env: &mut Env) -> SResult<Expression> {
-    let (parsed, _) = parse(&tokenize(input))?;
+fn parse_eval(input: Vec<String>, env: &mut Env) -> SResult<Expression> {
+    let (parsed, unparsed) = parse(&input)?;
     let evaluated = eval(&parsed, env)?;
-    Ok(evaluated)
+    if !unparsed.is_empty() {
+        parse_eval(unparsed.to_vec(), env)
+    } else {
+        Ok(evaluated)
+    }
 }
 
-fn parse_eval_lines(input: Vec<String>, env: &mut Env) -> SResult<Expression> {
-    let mut result = Ok(Expression::Number(0.0));
-    for line in input {
-        result = parse_eval(line, env);
-    }
-    result
-}
+// fn parse_eval_lines(input: Vec<String>, env: &mut Env) -> SResult<Expression> {
+//     let mut result = Ok(Expression::Number(0.0));
+//     for line in input {
+//         result = parse_eval(line, env);
+//     }
+//     result
+// }
 
 static PROMPT: &str = "scheme> ";
 
@@ -468,7 +474,9 @@ pub fn repl() {
             break;
         }
 
-        match parse_eval(expr, env) {
+        let tokens = tokenize(&mut expr.chars().peekable());
+
+        match parse_eval(tokens, env) {
             Ok(result) => println!("> {}", result),
             Err(e) => match e {
                 SErr::Reason(msg) => println!("> Error: {}", msg),
@@ -481,12 +489,16 @@ mod tests {
 
     use super::*;
 
+    fn tokenize_helper(input: &str) -> Vec<String> {
+        let expr = tokenize(&mut input.chars().peekable());
+        expr
+    }
+
     #[test]
     fn simple_expression_test() {
         let env = &mut init_env();
-
-        let expr = "(+ 2 6)".to_string();
-
+        let input = "(+ 2 6)";
+        let expr = tokenize_helper(input);
         let actual = match parse_eval(expr, env).unwrap() {
             Expression::Number(n) => n,
             _ => 0.0,
@@ -500,9 +512,11 @@ mod tests {
     fn define_set_test() {
         let env = &mut init_env();
 
-        let expr1 = "(define my-num 42)".to_string();
+        let input1 = "(define my-num 42)";
+        let expr1 = tokenize_helper(input1);
         parse_eval(expr1, env);
-        let expr2 = "(+ 3 my-num)".to_string();
+        let input2 = "(+ 3 my-num)";
+        let expr2 = tokenize_helper(input2);
 
         let actual = match parse_eval(expr2, env).unwrap() {
             Expression::Number(n) => n,
@@ -516,11 +530,12 @@ mod tests {
     #[test]
     fn define_set_parse_lines_test() {
         let env = &mut init_env();
-        let expr1 = "(define my-num 42)".to_string();
-        let expr2 = "(+ 3 my-num)".to_string();
-        let exps = vec![expr1, expr2];
-
-        let actual = match parse_eval_lines(exps, env).unwrap() {
+        let input = r#"
+(define my-num 42)
+(+ 3 my-num)
+"#;
+        let expr = tokenize_helper(input);
+        let actual = match parse_eval(expr, env).unwrap() {
             Expression::Number(n) => n,
             _ => 0.0,
         };
@@ -532,8 +547,8 @@ mod tests {
     #[test]
     fn compare_equals_test() {
         let env = &mut init_env();
-        let expr = "(= 1 1 1)".to_string();
-
+        let input = "(= 1 1 1)";
+        let expr = tokenize_helper(input);
         let actual = match parse_eval(expr, env).unwrap() {
             Expression::Bool(b) => b,
             _ => false,
@@ -545,7 +560,8 @@ mod tests {
     #[test]
     fn compare_unequals_test() {
         let env = &mut init_env();
-        let expr = "(= 1 1 2)".to_string();
+        let input = "(= 1 1 2)";
+        let expr = tokenize_helper(input);
 
         let actual = match parse_eval(expr, env).unwrap() {
             Expression::Bool(b) => b,
@@ -558,8 +574,8 @@ mod tests {
     #[test]
     fn compare_greater_test() {
         let env = &mut init_env();
-        let expr = "(> 5 3 1)".to_string();
-
+        let input = "(> 5 3 1)";
+        let expr = tokenize_helper(input);
         let actual = match parse_eval(expr, env).unwrap() {
             Expression::Bool(b) => b,
             _ => panic!("expression could not be evaluated"),
@@ -571,7 +587,8 @@ mod tests {
     #[test]
     fn compare_greater_than_test() {
         let env = &mut init_env();
-        let expr = "(>= 5 5 3 1)".to_string();
+        let input = "(>= 5 5 3 1)";
+        let expr = tokenize_helper(input);
 
         let actual = match parse_eval(expr, env).unwrap() {
             Expression::Bool(b) => b,
@@ -584,7 +601,8 @@ mod tests {
     #[test]
     fn compare_smaller_test() {
         let env = &mut init_env();
-        let expr = "(< 1 3 5)".to_string();
+        let input = "(< 1 3 5)";
+        let expr = tokenize_helper(input);
 
         let actual = match parse_eval(expr, env).unwrap() {
             Expression::Bool(b) => b,
@@ -597,7 +615,8 @@ mod tests {
     #[test]
     fn compare_smaller_than_test() {
         let env = &mut init_env();
-        let expr = "(<= 1 1 3 5)".to_string();
+        let input = "(<= 1 1 3 5)";
+        let expr = tokenize_helper(input);
 
         let actual = match parse_eval(expr, env).unwrap() {
             Expression::Bool(b) => b,
@@ -610,11 +629,13 @@ mod tests {
     #[test]
     fn compare_with_variables_test() {
         let env = &mut init_env();
-        let expr1 = "(define my-num 42)".to_string();
-        let expr2 = "(>= my-num 5 5 (+ 3 1))".to_string();
-        let exps = vec![expr1, expr2];
+        let input = r#"
+(define my-num 42)
+(>= my-num 5 5 (+ 3 1))
+"#;
+        let expr = tokenize_helper(input);
 
-        let actual = match parse_eval_lines(exps, env).unwrap() {
+        let actual = match parse_eval(expr, env).unwrap() {
             Expression::Bool(b) => b,
             _ => panic!("ERROR expression could not be evaluated"),
         };
@@ -625,11 +646,13 @@ mod tests {
     #[test]
     fn lambda_simple_test() {
         let env = &mut init_env();
-        let expr1 = "(define add3 (lambda () (+ 1 2)))".to_string();
-        let expr2 = "(add3)".to_string();
-        let exps = vec![expr1, expr2];
+        let input = r#"
+(define add3 (lambda () (+ 1 2)))
+(add3)
+        "#;
+        let expr = tokenize_helper(input);
 
-        let actual = match parse_eval_lines(exps, env).unwrap() {
+        let actual = match parse_eval(expr, env).unwrap() {
             Expression::Number(n) => n,
             _ => panic!("ERROR expression could not be evaluated"),
         };
@@ -641,12 +664,14 @@ mod tests {
     #[test]
     fn lambda_fib_test() {
         let env = &mut init_env();
-        let expr1 =
-            "(define fib (lambda (n) (if (< n 2) 1 (+ (fib (- n 1)) (fib (- n 2))))))".to_string();
-        let expr2 = "(fib 10)".to_string();
-        let exps = vec![expr1, expr2];
 
-        let actual = match parse_eval_lines(exps, env).unwrap() {
+        let input = r#"
+(define fib (lambda (n) (if (< n 2) 1 (+ (fib (- n 1)) (fib (- n 2))))))
+(fib 10)
+        "#;
+        let expr = tokenize_helper(input);
+
+        let actual = match parse_eval(expr, env).unwrap() {
             Expression::Number(n) => n,
             _ => panic!("ERROR expression could not be evaluated"),
         };
