@@ -72,6 +72,7 @@ impl fmt::Display for Expression {
 }
 
 struct Env<'a> {
+    builtins: HashMap<String, Expression>,
     operations: HashMap<String, Expression>,
     scope: Option<&'a Env<'a>>,
 }
@@ -111,6 +112,7 @@ fn init_lambda_env<'a>(
 
     let new_env = Env {
         operations,
+        builtins: outer.builtins.clone(),
         scope: Some(outer),
     };
 
@@ -118,22 +120,17 @@ fn init_lambda_env<'a>(
 }
 
 fn env_get(s: &str, env: &Env) -> Option<Expression> {
-    match env.operations.get(s) {
+    match env.builtins.get(s) {
         Some(expr) => Some(expr.clone()),
-        None => match &env.scope {
-            Some(outer) => env_get(s, &outer),
-            None => None,
+        None => match env.operations.get(s) {
+            Some(expr) => Some(expr.clone()),
+            None => match &env.scope {
+                Some(outer) => env_get(s, &outer),
+                None => None,
+            },
         },
     }
 }
-// fn tokenize(expression: String) -> Vec<String> {
-//     expression
-//         .replace("(", " ( ")
-//         .replace(")", " ) ")
-//         .split_whitespace()
-//         .map(|x| x.to_string())
-//         .collect()
-// }
 
 fn parse<'a>(tokens: &'a [String]) -> SResult<(Expression, &'a [String])> {
     let (token, rest) = tokens
@@ -222,8 +219,9 @@ macro_rules! comparison {
     }};
 }
 fn init_env<'a>() -> Env<'a> {
-    let mut operations: HashMap<String, Expression> = HashMap::new();
-    operations.insert(
+    let operations: HashMap<String, Expression> = HashMap::new();
+    let mut builtins: HashMap<String, Expression> = HashMap::new();
+    builtins.insert(
         "+".to_string(),
         Expression::Func(|args: &[Expression]| -> Result<Expression, SErr> {
             let sum = parse_list_of_floats(args)?.iter().sum();
@@ -231,15 +229,7 @@ fn init_env<'a>() -> Env<'a> {
         }),
     );
 
-    operations.insert(
-        "*".to_string(),
-        Expression::Func(|args: &[Expression]| -> Result<Expression, SErr> {
-            let product = parse_list_of_floats(args)?.iter().product();
-            Ok(Expression::Number(product))
-        }),
-    );
-
-    operations.insert(
+    builtins.insert(
         "-".to_string(),
         Expression::Func(|args: &[Expression]| -> Result<Expression, SErr> {
             let floats = parse_list_of_floats(args)?;
@@ -251,24 +241,114 @@ fn init_env<'a>() -> Env<'a> {
         }),
     );
 
-    operations.insert(
+    builtins.insert(
+        "*".to_string(),
+        Expression::Func(|args: &[Expression]| -> Result<Expression, SErr> {
+            let product = parse_list_of_floats(args)?.iter().product();
+            Ok(Expression::Number(product))
+        }),
+    );
+
+    builtins.insert(
+        "/".to_string(),
+        Expression::Func(|args: &[Expression]| -> Result<Expression, SErr> {
+            let floats = parse_list_of_floats(args)?;
+            let first = *floats
+                .first()
+                .ok_or(SErr::Reason("expected at least one number".to_string()))?;
+            let result = floats[1..]
+                .iter()
+                .filter(|x| **x != 0.0)
+                .fold(first, |num, div| num / div);
+            Ok(Expression::Number(result))
+        }),
+    );
+
+    builtins.insert(
+        "max".to_string(),
+        Expression::Func(|args: &[Expression]| -> SResult<Expression> {
+            let floats = parse_list_of_floats(args)?;
+            let first = *floats.first().ok_or(SErr::Reason(
+                "max operation expectes at least one number".to_string(),
+            ))?;
+            let max = floats.iter().fold(first, |acc, curr| acc.max(*curr));
+            Ok(Expression::Number(max))
+        }),
+    );
+
+    builtins.insert(
+        "min".to_string(),
+        Expression::Func(|args: &[Expression]| -> SResult<Expression> {
+            let floats = parse_list_of_floats(args)?;
+            let first = *floats.first().ok_or(SErr::Reason(
+                "min operation expectes at least one number".to_string(),
+            ))?;
+            let min = floats.iter().fold(first, |acc, curr| acc.min(*curr));
+            Ok(Expression::Number(min))
+        }),
+    );
+
+    builtins.insert(
+        "abs".to_string(),
+        Expression::Func(|args: &[Expression]| -> SResult<Expression> {
+            let float = parse_list_of_floats(args)?;
+            if float.len() > 1 {
+                return Err(SErr::Reason(
+                    "abs operation expects a single number".to_string(),
+                ));
+            }
+            Ok(Expression::Number(float[0].abs()))
+        }),
+    );
+
+    builtins.insert(
+        "expt".to_string(),
+        Expression::Func(|args: &[Expression]| -> SResult<Expression> {
+            let floats = parse_list_of_floats(args)?;
+            if floats.len() != 2 {
+                return Err(SErr::Reason(
+                    "expt operation expects exactly two numbers".to_string(),
+                ));
+            }
+            let operand = floats.first().unwrap();
+            let exponent = floats.last().unwrap();
+
+            Ok(Expression::Number(operand.powf(*exponent)))
+        }),
+    );
+
+    builtins.insert(
+        "round".to_string(),
+        Expression::Func(|args: &[Expression]| -> SResult<Expression> {
+            let float = parse_list_of_floats(args)?;
+            if float.len() > 1 {
+                return Err(SErr::Reason(
+                    "round operation expects a single number".to_string(),
+                ));
+            }
+            Ok(Expression::Number(float[0].round()))
+        }),
+    );
+
+    builtins.insert(
         "=".to_string(),
         Expression::Func(comparison!(|a, b| a == b)),
     );
 
-    operations.insert(">".to_string(), Expression::Func(comparison!(|a, b| a > b)));
-    operations.insert("<".to_string(), Expression::Func(comparison!(|a, b| a < b)));
-    operations.insert(
+    builtins.insert(">".to_string(), Expression::Func(comparison!(|a, b| a > b)));
+    builtins.insert("<".to_string(), Expression::Func(comparison!(|a, b| a < b)));
+    builtins.insert(
         ">=".to_string(),
         Expression::Func(comparison!(|a, b| a >= b)),
     );
-    operations.insert(
+    builtins.insert(
         "<=".to_string(),
         Expression::Func(comparison!(|a, b| a <= b)),
     );
 
     Env {
         operations,
+        builtins,
         scope: None,
     }
 }
