@@ -1,4 +1,7 @@
 mod circuit;
 pub mod cli;
-pub mod scheme;
-pub mod tokenizer;
+mod environment;
+mod evaluator;
+mod parser;
+mod scheme;
+mod tokenizer;
