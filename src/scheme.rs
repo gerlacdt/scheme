@@ -529,14 +529,6 @@ fn parse_eval(input: Vec<String>, env: &mut Env) -> SResult<Expression> {
     }
 }
 
-// fn parse_eval_lines(input: Vec<String>, env: &mut Env) -> SResult<Expression> {
-//     let mut result = Ok(Expression::Number(0.0));
-//     for line in input {
-//         result = parse_eval(line, env);
-//     }
-//     result
-// }
-
 static PROMPT: &str = "scheme> ";
 
 pub fn repl() {
@@ -572,7 +564,7 @@ pub fn compile(path: &str) {
     let tokens = tokenize(&mut input.chars().peekable());
 
     match parse_eval(tokens, env) {
-        Ok(result) => println!("scheme> {}", result),
+        Ok(result) => println!("{}", result),
         Err(e) => match e {
             SErr::Reason(msg) => println!("scheme> ERROR: {}", msg),
         },

@@ -1,5 +1,4 @@
-use scheme::scheme::repl;
+use scheme::cli::start;
 fn main() {
-    println!("welcome to the simple Scheme REPL...");
-    repl();
+    start()
 }
