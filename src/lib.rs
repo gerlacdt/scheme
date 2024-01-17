@@ -1,4 +1,3 @@
-mod circuit;
 pub mod cli;
 mod environment;
 mod evaluator;
