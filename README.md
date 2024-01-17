@@ -13,6 +13,9 @@ scheme repl
 
 # run a file
 scheme compile <file>
+
+# a test file with a fibonacci funcion is provided
+scheme compile test_files/test.scm
 ```
 
 ### Development
