@@ -9,8 +9,13 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
+    /// start the interactive environment REPL (Read Eval Print Loop), e.g. >scheme repl
     Repl,
-    Compile { file: String },
+    /// compile/run given file and print result, e.g. >scheme compile file.scm    
+    Compile {
+        /// relative file path which should be run
+        file: String,
+    },
 }
 
 pub fn start() {
